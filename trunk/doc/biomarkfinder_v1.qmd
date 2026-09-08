@@ -1,27 +1,108 @@
 ---
 title: "biomarkfinder"
-author: "P.BADY"
-format: html
+author: 
+  - name: "Pierre Bady"
+  - orcid: 0000-0003-1398-4689
+  - email: "pierre.bad@unil.ch"
+format: 
+  html:
+    theme: flatly
+    toc: true
+    toc-depth: 6
+    toc-location: left-body
+    number-sections: true
+    number-depth: 6
+    
 editor: visual
+
+execute: 
+  warning: FALSE
+  
+Jupyter: /export/scratch3/gitProject/biomarkfinder/trunk/myenv
 ---
 
-## Quarto
+- **Contributor:** P.BADY
+- **Modification Date:** `r date()`
+- **Abstract:**
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+```         
+License: GPL version 2 or newer
+Copyright (C) 2009-2026  Pierre Bady
 
-## Running Code
+This program is free software/document; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
-```{r}
-1 + 1
+This program/document is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 ```
 
-You can add options to executable code like this
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(rmarkdown)
+library(utils)
+options(encoding="UTF-8")
+options(show.signif.stars=TRUE)
+# non permanent command
+load("/export/scratch3/gitProject/biomarkfinder/trunk/dev/.RData")
+source("/export/scratch2/Rplus/Rutility.R")
+library(xtable)
+options(xtable.floating = FALSE)
+options(xtable.timestamp = "")
+library(xlsx)
 
-```{r}
-#| echo: false
-2 * 2
+# additional functions
+.cleanPackage <- function(keeplib){
+  auxi <- search()
+  auxi <- auxi[!is.element(auxi,keeplib)]
+  sapply(auxi,function(x) try(detach(x,character.only = TRUE,unload=TRUE)))
+  R.utils::gcDLLs()
+}
+cleanPackage <- function(...){
+  suppressPackageStartupMessages(.cleanPackage(...))
+}
+RequirePB <- function(...){
+  suppressPackageStartupMessages(require(...))
+}
+SourcePB <- function(...){
+  suppressPackageStartupMessages(source(...)) 
+}
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+### color gradient
+cols <- colorRampPalette(rev(brewer.pal(n = 7, name ="RdYlBu")))(25)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+# Motivations
+
+# Virtual environment preparation
+
+new alternative (2026-07-27): see https://quarto.org/docs/projects/virtual-environments.html
+
+add the following command in a terminal (for station P3 ultra)
+
+```         
+cd /export/scratch3/gitProject/biomarkfinder
+/export/scratch2/applications/anaconda3/bin/python -m venv myenv
+source myenv/bin/activate
+pip install pooch scanpy pandas numpy seaborn igraph leidenalg scipy scikit-learn 
+```
+
+
+# test
+
+
+```{python}
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import PCA
+from sklearn.linear_model import Ridge
+```
+
