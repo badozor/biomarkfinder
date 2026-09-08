@@ -7,6 +7,5 @@ Rscript.R
 README.md
 trunk/myenv
 trunk/dev
-.Rprofile
-R.sh
+
 
