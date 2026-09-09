@@ -96,7 +96,47 @@ pip install pooch scanpy pandas numpy seaborn igraph leidenalg scipy scikit-lear
 ```
 
 
-# test
+
+
+
+# Tokenization for RNA-seq with R
+
+## data preparation
+A classical idea is to use rank-based encoding where one sample (or cell) is a sentence and the tokens are genes (e.g. Geneformer,scGPT).
+
+### Exemple for 
+Import count data from bulk RNAseq (https://zenodo.org/records/22207726)
+```{r}
+annotated_combined <- read.delim("/export/scratch3/gitProject/biomarkfinder/trunk/data/annotated_combined.counts")
+tabcount <- apply(annotated_combined[,!is.element(colnames(annotated_combined),c("id","symbol"))],2,function(x) tapply(x,annotated_combined$symbol,median))
+saveRDS(tabcount,file="/export/scratch3/gitProject/biomarkfinder/trunk/data/tabcount.rds")
+```
+
+
+```{r}
+tabcount <- readRDS("/export/scratch3/gitProject/biomarkfinder/trunk/data/tabcount.rds")
+dim(tabcount)
+colnames(tabcount) <- gsub("[.]","_",colnames(tabcount))
+
+```
+
+
+```{r}
+source("/export/scratch3/gitProject/biomarkfinder/trunk/code/tokenize.R")
+```
+
+
+Each cell or sample is converted into an ordered vector of gene identifiers (ranked by descending relative expression) and then mapped to token identifiers (integers) using a vocabulary, before being fed into a model based on the Transformer architecture. This step is typically performed in Python, as the model training itself is rarely carried out in R. R is well-suited for constructing the vocabulary and ordered sequences; the data are then exported in JSON or Parquet format for use with `transformers` (PyTorch).
+
+
+
+
+## Two groups
+
+## Multi-class
+
+## Regression
+
 
 
 ```{python}
