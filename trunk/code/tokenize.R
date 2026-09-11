@@ -4,7 +4,8 @@ library(SingleCellExperiment)
 # expr_matrix: genes x cells/samples (sparse dgCMatrix), rows named by gene ID
 tokenize_expression <- function(expr_matrix, gene_median = NULL, max_len = 2048) {
   if (is.null(gene_median)) {
-    gene_median <- Matrix::rowMeans(expr_matrix[expr_matrix > 0], na.rm = TRUE)
+    #gene_median <- Matrix::rowMeans(expr_matrix[expr_matrix > 0], na.rm = TRUE)
+    gene_median <- Matrix::rowMeans(expr_matrix, na.rm = TRUE)
   }
   
   tokenize_cell <- function(cell_vec, genes, gene_median, max_len) {
@@ -22,7 +23,3 @@ tokenize_expression <- function(expr_matrix, gene_median = NULL, max_len = 2048)
     tokenize_cell(expr_matrix[, j], genes, gene_median, max_len)
   })
 }
-
-# usage
-# tokens_list <- tokenize_expression(counts(sce))
-# tokens_list[[1]]  # ranked gene-ID sequence for cell 1

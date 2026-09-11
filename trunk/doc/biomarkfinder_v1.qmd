@@ -1,5 +1,5 @@
 ---
-title: "biomarkfinder"
+title: "Construction of foundation model ... Test and learn :)"
 author: 
   - name: "Pierre Bady"
   - orcid: 0000-0003-1398-4689
@@ -18,7 +18,7 @@ editor: visual
 execute: 
   warning: FALSE
   
-Jupyter: /export/scratch3/gitProject/biomarkfinder/trunk/myenv
+Jupyter: /export/scratch3/gitProject/biomarkfinder/myenv
 ---
 
 - **Contributor:** P.BADY
@@ -76,6 +76,7 @@ gg_color_hue <- function(n) {
   hues = seq(15, 375, length = n + 1)
   hcl(h = hues, l = 65, c = 100)[1:n]
 }
+  
 ### color gradient
 cols <- colorRampPalette(rev(brewer.pal(n = 7, name ="RdYlBu")))(25)
 ```
@@ -92,52 +93,277 @@ add the following command in a terminal (for station P3 ultra)
 cd /export/scratch3/gitProject/biomarkfinder
 /export/scratch2/applications/anaconda3/bin/python -m venv myenv
 source myenv/bin/activate
-pip install pooch scanpy pandas numpy seaborn igraph leidenalg scipy scikit-learn 
+pip install pooch scanpy pandas numpy seaborn igraph leidenalg scipy scikit-learn datasets "transformers<=4.44.0" geneformer torch
+cd /export/scratch3/gitProject/Geneformer
+pip install .
 ```
 
+installation of geneformer
 
-
-
+```         
+git lfs install
+git clone https://huggingface.co/ctheodoris/Geneformer
+cd Geneformer
+pip install .
+```
 
 # Tokenization for RNA-seq with R
 
 ## data preparation
+
 A classical idea is to use rank-based encoding where one sample (or cell) is a sentence and the tokens are genes (e.g. Geneformer,scGPT).
 
-### Exemple for 
+## Two groups: Exemple for RNA-seq
+
 Import count data from bulk RNAseq (https://zenodo.org/records/22207726)
-```{r}
+
+```{r eval=FALSE}
 annotated_combined <- read.delim("/export/scratch3/gitProject/biomarkfinder/trunk/data/annotated_combined.counts")
 tabcount <- apply(annotated_combined[,!is.element(colnames(annotated_combined),c("id","symbol"))],2,function(x) tapply(x,annotated_combined$symbol,median))
 saveRDS(tabcount,file="/export/scratch3/gitProject/biomarkfinder/trunk/data/tabcount.rds")
 ```
 
+```{r eval=FALSE}
+annotated_combined <- read.delim("/export/scratch3/gitProject/biomarkfinder/trunk/data/annotated_combined.counts")
+rownames(annotated_combined) <- annotated_combined$id
+tabcountEns <- annotated_combined[,!is.element(colnames(annotated_combined),c("id","symbol"))]
+saveRDS(tabcountEns,file="/export/scratch3/gitProject/biomarkfinder/trunk/data/tabcountEns.rds")
+```
 
 ```{r}
-tabcount <- readRDS("/export/scratch3/gitProject/biomarkfinder/trunk/data/tabcount.rds")
+tabcount <- readRDS("/export/scratch3/gitProject/biomarkfinder/trunk/data/tabcountEns.rds")
 dim(tabcount)
 colnames(tabcount) <- gsub("[.]","_",colnames(tabcount))
+colnames(tabcount) <- ifelse(colnames(tabcount)=="P670_036B","P670_036Bis",colnames(tabcount))
+```
 
+```{r}
+library(readxl)
+desc0 <- as.data.frame(read_excel("/export/scratch3/gitProject/biomarkfinder/trunk/data/TableS1_GRvolume.xlsx"))
+rownames(desc0) <- desc0$ID
+head(desc0)
+dim(desc0)
+```
+
+filtering
+
+```{r}
+library(edgeR)
+intersectx <- intersect(colnames(tabcount),rownames(desc0))
+desc0 <- desc0[intersectx,]
+tabcount <- tabcount[,rownames(desc0)]
+
+###
+DGEcount0 <-DGEList(counts=tabcount) #creat DGElist object
+
+#data preparation and filtering for genes with very low counts
+#the experiment has 3 replicates for each condition. We keep genes with at least 2 cpm in at least 3 samples
+# keep <- rowSums(cpm(DGEcount0)>2 )>=3
+cpm <- edgeR::cpm
+## updated 07/06/2023 => more relax on the selection of the gene
+keep <- rowSums(cpm(DGEcount0)>2 )>=1
+table(keep)
+DGEcount0 <-DGEcount0[keep, , keep.lib.sizes = F]
+
+### need to examine more en details human|mice|treatment|tuba-tumour
+design1 <-model.matrix( ~ 1, data=desc0)
+colnames(design1)
+
+#Calculate normalization factors to scale the raw library sizes
+#counthuman0 <- counthuman
+DGEcount0 <-calcNormFactors(DGEcount0) 
+
+#takes really long time. includes common and tagwise dispersion. tagwise is recommende for differential expression analysis 
+DGEcount0 <- estimateDisp(DGEcount0, design=design1, robust = TRUE) 
+saveRDS(DGEcount0,file="DGEcount0.rds")
+#save(counthuman0,file="counthuman0.rda")
+saveRDS(desc0,file="desc0.rds")
 ```
 
 
+load R functions for the preparation of the tokenization
 ```{r}
 source("/export/scratch3/gitProject/biomarkfinder/trunk/code/tokenize.R")
 ```
 
-
 Each cell or sample is converted into an ordered vector of gene identifiers (ranked by descending relative expression) and then mapped to token identifiers (integers) using a vocabulary, before being fed into a model based on the Transformer architecture. This step is typically performed in Python, as the model training itself is rarely carried out in R. R is well-suited for constructing the vocabulary and ordered sequences; the data are then exported in JSON or Parquet format for use with `transformers` (PyTorch).
 
+```{r}
+# usage
+DGCcount <- Matrix(DGEcount0$counts, sparse = T )
+tokens_list <- tokenize_expression(DGCcount)
+head(tokens_list[[1]])  # ranked gene-ID sequence for cell 1
+```
+
+construction Json object
+
+```{r}
+library(jsonlite)
+labels <- desc0$subtype
+
+# export as JSON lines: one record per cell, ready for a HF `datasets.Dataset`
+records <- Map(function(tok, lab) list(input_tokens = tok, label = lab),
+               tokens_list, labels)
+write(sapply(records, toJSON, auto_unbox = TRUE), file = "tokens_labeled.jsonl")
+```
+
+problem with geneformer: need to downgrade transformers
+
+```         
+pip install "transformers<=4.44.0"
+```
+
+You can fix this error by downgrading your transformers package to version 4.44.0 or older, where SpecialTokensMixin was still exposed directly
+
+preparation of the model in python
+
+```{python, eval=FALSE}
+from datasets import load_dataset
+from transformers import AutoModelForSequenceClassification, Trainer, TrainingArguments
+#from geneformer import TranscriptomeTokenizer  # or scGPT equivalent
+import torch
+import geneformer
+
+# gene tokens -> integer IDs using the model's pretrained vocabulary
+dataset = load_dataset("json", data_files="tokens_labeled.jsonl")["train"]
+label2id = {"non-codel": 0, "codel": 1}
+dataset = dataset.map(lambda x: {"label": label2id[x["label"]]})
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    "ctheodoris/Geneformer", num_labels=2
+)
+
+args = TrainingArguments(
+    output_dir="geneformer_biomarker_ft",
+    per_device_train_batch_size=16,
+    num_train_epochs=5,
+    learning_rate=5e-5 #,evaluation_strategy="epoch"
+)
+
+trainer = Trainer(model=model, args=args, train_dataset=dataset)
+trainer.train()
+```
+
+```{python}
+# """
+# Diagnostic isolé — à exécuter seul via reticulate::py_run_file(), séparément
+# du script d'entraînement complet. Ne fait aucun entraînement, juste des
+# vérifications sur tokens_labeled.jsonl et le vocabulaire Geneformer.
+# """
+
+import json
+from transformers import AutoTokenizer
+
+# 1. Inspecter le fichier brut, sans rien via `datasets`
+with open("tokens_labeled.jsonl") as f:
+    lines = [json.loads(l) for l in f]
+
+print(f"Nombre total de lignes dans tokens_labeled.jsonl : {len(lines)}")
+print(f"Clés du premier enregistrement : {list(lines[0].keys())}")
+print(f"Type de 'input_tokens' du 1er enregistrement : {type(lines[0]['input_tokens'])}")
+print(f"5 premiers tokens du 1er enregistrement : {lines[0]['input_tokens'][:5]}")
+print(f"Nombre de tokens dans le 1er enregistrement : {len(lines[0]['input_tokens'])}")
+print(f"Valeur de 'label' du 1er enregistrement : {lines[0]['label']!r}")
+
+labels_seen = set(l["label"] for l in lines)
+print(f"Valeurs uniques de 'label' dans tout le fichier : {labels_seen}")
+
+# 2. Charger le vocabulaire Geneformer et vérifier le format exact attendu
+tokenizer = AutoTokenizer.from_pretrained("ctheodoris/Geneformer")
+vocab = set(tokenizer.get_vocab().keys())
+print(f"Taille du vocabulaire Geneformer : {len(vocab)}")
+print(f"5 exemples d'entrées du vocabulaire : {list(vocab)[:5]}")
+
+# 3. Vérifier si un suffixe de version (.xx) casse le matching
+sample = lines[0]["input_tokens"][:20]
+exact_overlap = sum(1 for t in sample if t in vocab)
+stripped_overlap = sum(1 for t in sample if t.split(".")[0] in vocab)
+print(f"Overlap exact (avec suffixe éventuel) sur 20 tokens : {exact_overlap}/20")
+print(f"Overlap après suppression du suffixe '.xx' sur 20 tokens : {stripped_overlap}/20")
+
+# 4. Overlap sur l'ensemble du fichier (pas juste le 1er enregistrement)
+all_tokens = set()
+for l in lines:
+    all_tokens.update(l["input_tokens"])
+total_overlap = len(all_tokens & vocab)
+print(f"Nombre de gènes uniques dans le fichier : {len(all_tokens)}")
+print(f"Nombre de gènes uniques présents dans le vocabulaire Geneformer : {total_overlap}")
+```
+
+```{python}
+# Diagnostic : localiser token_dictionary.pkl SANS exécuter geneformer/__init__.py
+# (qui plante à cause d'une incompatibilité de version avec transformers).
+# importlib.util.find_spec() localise le package sans l'importer/exécuter.
+
+import importlib.util
+import os
+ 
+spec = importlib.util.find_spec("geneformer")
+if spec is None or spec.origin is None:
+    raise RuntimeError("Le package 'geneformer' est introuvable dans l'environnement Python actif.")
+ 
+pkg_dir = os.path.dirname(spec.origin)
+print(f"Dossier d'installation de geneformer (sans l'importer) : {pkg_dir}")
+ 
+print("\nFichiers .pkl ou contenant 'token'/'dict' dans ce dossier (récursif) :")
+found = []
+for root, dirs, files in os.walk(pkg_dir):
+    for f in files:
+        if f.endswith(".pkl") or "token" in f.lower() or "dict" in f.lower():
+            full_path = os.path.join(root, f)
+            found.append(full_path)
+            print(full_path)
+ 
+if not found:
+    print("Aucun fichier trouvé — le dictionnaire est peut-être téléchargé séparément "
+          "(pas inclus dans le package pip) ou porte un autre nom.")
+ 
+
+```
+
+```{r}
+reticulate::py_run_file("/export/scratch3/gitProject/biomarkfinder/trunk/code/finetune_geneformer_py311.py")
+```
+
+next step: integration des deux scripts python (le code n'aime pas être décomposé)
+
+```{r}
+reticulate::py_run_file("/export/scratch3/gitProject/biomarkfinder/trunk/code/run_biomarker_ranking.py")
+```
 
 
+simplifyVector = FALSE évite que jsonlite ne fusionne les paires [gene_id, effect] (chaîne + nombre) en une matrice de caractères, ce qui forcerait effect en texte. Le code ci-dessus reconstruit un data.frame propre avec effect en numérique, trié dans le même ordre que dans le fichier (donc déjà par effet décroissant).
 
-## Two groups
+```{r}
+library(jsonlite)
+biomarkers <- fromJSON("top_biomarkers.json", simplifyVector = FALSE)
+biomarkers_df <- do.call(rbind, lapply(biomarkers, function(x) {
+  data.frame(gene_id = x[[1]], effect = as.numeric(x[[2]]))
+}))
+
+head(biomarkers_df, 20)
+```
+
+
+in construction
+
+```{r eval=FALSE}
+library(edgeR)   # or DESeq2
+
+top_genes <- head(biomarkers_df, 20)$gene_id  # from top_biomarkers above
+
+dge <- DGEList(counts = DGEcount0$counts[top_genes, ], group = desc0$subtype)
+dge <- calcNormFactors(dge)
+design <- model.matrix(~ desc0$subtype)
+dge <- estimateDisp(dge, design)
+fit <- glmQLFit(dge, design)
+qlf <- glmQLFTest(fit, coef = 2)
+topTags(qlf, n = length(top_genes))
+```
 
 ## Multi-class
 
 ## Regression
-
-
 
 ```{python}
 import numpy as np
@@ -145,4 +371,3 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 ```
-
