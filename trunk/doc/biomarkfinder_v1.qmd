@@ -110,8 +110,11 @@ pip install .
 # Tokenization for RNA-seq with R
 
 ## data preparation
-
 A classical idea is to use rank-based encoding where one sample (or cell) is a sentence and the tokens are genes (e.g. Geneformer,scGPT).
+
+
+
+ * **Methodological note on the in silico perturbation strategy:** the approach of removing each gene from a cell's tokenized sequence and measuring the resulting shift in predicted probability (used in perturbation_scores_py311.py and run_biomarker_ranking.py) is inspired by the in silico deletion strategy described in the original Geneformer paper (Theodoris et al., 2023, "In silico perturbation" section) — this should be cited/credited as a derived method rather than the official implementation, since it is a simplified reimplementation for biomarker ranking purposes, not the model's source code.
 
 ## Two groups: Exemple for RNA-seq
 
